@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # ExamPro — Proctored Examination Platform (Angular Frontend)
 
 A fully production-ready Angular 17 frontend for an online proctored examination system.
@@ -185,3 +186,7 @@ ng build --configuration production
 - Fullscreen mode requires user gesture — triggered on "Start Test"
 - Video chunks upload in 30-second segments to avoid memory issues
 - All API calls gracefully handle errors with snackbar notifications
+=======
+# Online-Test-Application-Frontend-
+Here you will find all the frontend code of this application which is built in angular
+>>>>>>> 2b56fbbf055492947b9898a23db2b54356647032
