@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+tmp/
+out-tsc/
+bazel-out/
+
+# IDE
+.idea/
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+.vscode/
+
+# Misc
+.sass-cache/
+/connect.lock
+/coverage
+/libpeerconnection.log
+npm-debug.log
+yarn-error.log
+testem.log
+/typings
+
+# e2e
+e2e/*.js
+e2e/*.map
+
+# System Files
+.DS_Store
+Thumbs.db
+.vs/
+bin/
+obj/
+*.user
+*.suo
+*.csproj.user
+node_modules/
+.env
