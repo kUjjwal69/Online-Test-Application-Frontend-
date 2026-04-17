@@ -101,6 +101,10 @@ interface AnswerMap {
             <div class="legend-item"><span class="dot active"></span> Current</div>
             <div class="legend-item"><span class="dot"></span> Unanswered</div>
           </div>
+          <button class="fullscreen-btn" (click)="enterFullscreen()">
+            <mat-icon>fullscreen</mat-icon>
+            Full Screen
+          </button>
         </aside>
 
         <!-- Question Area -->
@@ -115,10 +119,10 @@ interface AnswerMap {
 
             <div class="options-list">
               <button
-                *ngFor="let opt of currentQuestion.options; let oi = index"
-                class="option-btn"
-                [class.selected]="answers[currentQuestion.id] === opt.id"
-                (click)="selectAnswer(currentQuestion.id, opt.id)">
+              *ngFor="let opt of currentQuestion.options; let oi = index"
+              class="option-btn"
+              [class.selected]="answers[currentQuestion.id] === opt.id"
+                (click)="selectAnswer(currentQuestion.id, opt.id, session.sessionId, oi)">
                 <span class="opt-letter">{{ optionLetters[oi] }}</span>
                 <span class="opt-text">{{ opt.optionText }}</span>
                 <mat-icon class="opt-check" *ngIf="answers[currentQuestion.id] === opt.id">check_circle</mat-icon>
@@ -141,16 +145,36 @@ interface AnswerMap {
               </button>
             </div>
           </div>
+
+          <div class="question-card empty-question-card" *ngIf="!currentQuestion">
+            <div class="qcard-header">
+              <span class="q-num">No questions available</span>
+            </div>
+            <p class="q-text">
+              This session currently has no visible questions. Please go back and start the test again.
+            </p>
+            <div class="q-nav-btns">
+              <button class="nav-btn prev" (click)="goHome()">
+                <mat-icon>arrow_back</mat-icon> Back to Dashboard
+              </button>
+            </div>
+          </div>
         </main>
 
         <!-- Violation Log Panel -->
-        <aside class="violation-panel" *ngIf="recentViolations.length > 0">
-          <div class="vp-header"><mat-icon>warning</mat-icon> Activity Log</div>
-          <div class="vp-item" *ngFor="let v of recentViolations">
-            <span class="vp-dot"></span>
-            <div>
-              <div class="vp-type">{{ v.type }}</div>
-              <div class="vp-desc">{{ v.desc }}</div>
+        <aside class="violation-panel" [class.closed]="!logPanelOpen">
+          <button class="vp-toggle" (click)="toggleLogPanel()" [attr.aria-label]="logPanelOpen ? 'Collapse activity log' : 'Expand activity log'">
+            <mat-icon>{{ logPanelOpen ? 'chevron_right' : 'chevron_left' }}</mat-icon>
+          </button>
+          <div class="vp-content" *ngIf="logPanelOpen">
+            <div class="vp-header"><mat-icon>warning</mat-icon> Activity Log</div>
+            <div class="vp-empty" *ngIf="recentViolations.length === 0">No activity yet.</div>
+            <div class="vp-item" *ngFor="let v of recentViolations">
+              <span class="vp-dot"></span>
+              <div>
+                <div class="vp-type">{{ v.type }}</div>
+                <div class="vp-desc">{{ v.desc }}</div>
+              </div>
             </div>
           </div>
         </aside>
@@ -256,6 +280,32 @@ interface AnswerMap {
     .dot { width: 10px; height: 10px; border-radius: 2px; background: var(--color-border); flex-shrink: 0; }
     .dot.answered { background: rgba(61,214,140,0.4); }
     .dot.active { background: var(--color-primary); }
+    .fullscreen-btn {
+      width: 100%;
+      margin-top: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 9px 10px;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      background: var(--color-surface-2);
+      color: var(--color-text-muted);
+      font-family: var(--font-main);
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      cursor: pointer;
+      transition: all var(--transition);
+    }
+    .fullscreen-btn:hover {
+      border-color: var(--color-primary);
+      color: var(--color-primary);
+      background: var(--color-primary-dim);
+    }
+    .fullscreen-btn mat-icon { font-size: 16px !important; width: 16px; height: 16px; }
 
     /* Question Area */
     .question-area { flex: 1; overflow-y: auto; padding: 32px; display: flex; justify-content: center; }
@@ -310,11 +360,23 @@ interface AnswerMap {
 
     /* Violation Panel */
     .violation-panel {
-      width: 220px; flex-shrink: 0; border-left: 1px solid var(--color-border);
-      background: var(--color-surface); padding: 20px 16px; overflow-y: auto;
+      width: 260px; flex-shrink: 0; border-left: 1px solid var(--color-border);
+      background: var(--color-surface); overflow: hidden; position: relative;
+      transition: width 0.22s ease;
     }
+    .violation-panel.closed { width: 34px; }
+    .vp-toggle {
+      position: absolute; top: 14px; left: 4px;
+      width: 24px; height: 24px; border: 1px solid var(--color-border);
+      border-radius: 50%; background: var(--color-surface-2); color: var(--color-text-muted);
+      display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 2;
+    }
+    .vp-toggle:hover { color: var(--color-text); border-color: var(--color-primary); }
+    .vp-toggle mat-icon { font-size: 18px !important; width: 18px; height: 18px; }
+    .vp-content { height: 100%; overflow-y: auto; padding: 20px 16px 20px 34px; }
     .vp-header { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--color-danger); margin-bottom: 14px; }
     .vp-header mat-icon { font-size: 16px !important; width: 16px; height: 16px; }
+    .vp-empty { font-size: 12px; color: var(--color-text-muted); padding: 8px 0 12px; }
     .vp-item { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--color-border); }
     .vp-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-danger); flex-shrink: 0; margin-top: 5px; }
     .vp-type { font-size: 12px; font-weight: 700; color: var(--color-danger); text-transform: uppercase; letter-spacing: 0.3px; }
@@ -332,7 +394,12 @@ export class ExamSessionComponent implements OnInit, OnDestroy {
   showSubmitConfirm = false;
   submitting = false;
   recentViolations: { type: string; desc: string }[] = [];
+  logPanelOpen = false;
   optionLetters = ['A', 'B', 'C', 'D', 'E', 'F'];
+  private readonly violationDebounceMs = 1200;
+  private lastViolationGroup = '';
+  private lastViolationAt = 0;
+  private isFirstViolationIgnored = false;
 
   private timerInterval?: ReturnType<typeof setInterval>;
   private subs: Subscription[] = [];
@@ -372,7 +439,26 @@ export class ExamSessionComponent implements OnInit, OnDestroy {
       return;
     }
 
+    // Always start with a clean local violation view for a new exam page load.
+    this.violationCount = 0;
+    this.recentViolations = [];
+    this.lastViolationGroup = '';
+    this.lastViolationAt = 0;
+
     this.timeRemaining = this.session.durationMinutes * 60;
+    if (!this.session.questions?.length) {
+      this.candidateService.getSessionQuestions(this.session.sessionId, this.session.testId).subscribe({
+        next: questions => {
+          this.session = this.session ? { ...this.session, questions } : this.session;
+          if (!questions.length) {
+            this.snackBar.open('No questions found for this test session.', 'Close', { duration: 4000 });
+          }
+        },
+        error: () => {
+          this.snackBar.open('Failed to load questions for this session.', 'Close', { duration: 4000 });
+        }
+      });
+    }
     this.startTimer();
     this.startProctoring();
   }
@@ -404,6 +490,7 @@ export class ExamSessionComponent implements OnInit, OnDestroy {
 
   // ─── Proctoring ────────────────────────────────────────────────────
   private startProctoring(): void {
+    
     const sessionId = this.session!.sessionId;
 
     // Enter fullscreen
@@ -421,10 +508,13 @@ export class ExamSessionComponent implements OnInit, OnDestroy {
 
     // Listen for violations
     const violSub = this.proctoringService.violationDetected$.subscribe(v => {
+       console.log("Violation detected:", v.type); // 👈 ADD THIS
+      if (!this.shouldCountViolation(v.type)) return;
       this.violationCount++;
       this.recentViolations.unshift({ type: v.type, desc: v.description });
       if (this.recentViolations.length > 10) this.recentViolations.pop();
       this.snackBar.open(`⚠ Violation detected: ${v.type}`, 'Dismiss', { duration: 3000, panelClass: 'warn-snack' });
+      this.enforceViolationExit();
     });
 
     // Listen for suspension
@@ -433,26 +523,27 @@ export class ExamSessionComponent implements OnInit, OnDestroy {
       this.proctoringService.cleanup();
       this.isSuspended = true;
       this.suspendReason = reason;
+      this.forceExitAfterSuspension();
     });
 
     this.subs.push(violSub, suspSub);
   }
 
   // ─── Answer Handling ────────────────────────────────────────────────
-  selectAnswer(questionId: string, optionId: string): void {
+  selectAnswer(questionId: string, optionId: string, sessionId: string, optionIndex: number): void {
     this.answers[questionId] = optionId;
+    const selectedOptionId = this.optionLetters[optionIndex] ?? 'A';
     // Submit answer to backend
-    this.candidateService.submitAnswer({
-      sessionId: this.session!.sessionId,
-      questionId,
-      selectedOptionId: optionId
-    }).subscribe({ error: () => {} });
+    this.candidateService.submitAnswer(sessionId, { questionId, selectedOptionId }).subscribe({ error: () => {} });
+    
   }
 
   // ─── Navigation ─────────────────────────────────────────────────────
   goToQuestion(index: number): void { this.currentIndex = index; }
   nextQuestion(): void { if (this.currentIndex < this.session!.questions.length - 1) this.currentIndex++; }
   prevQuestion(): void { if (this.currentIndex > 0) this.currentIndex--; }
+  toggleLogPanel(): void { this.logPanelOpen = !this.logPanelOpen; }
+  enterFullscreen(): void { this.proctoringService.enterFullscreen(); }
 
   // ─── Submit ──────────────────────────────────────────────────────────
   submitExam(autoSubmit = false): void {
@@ -461,11 +552,13 @@ export class ExamSessionComponent implements OnInit, OnDestroy {
     this.stopTimer();
     this.proctoringService.cleanup();
 
-    this.candidateService.submitTest({ sessionId: this.session!.sessionId }).subscribe({
+    this.candidateService.submitTest(this.session!.sessionId, { questionId: '', selectedOptionId: '' }).subscribe({
       next: (result) => {
         this.submitting = false;
         this.proctoringService.exitFullscreen();
-        this.router.navigate(['/exam/result'], { state: { result } });
+        const resultWithSessionId = { ...result, sessionId: result.sessionId || this.session!.sessionId };
+        localStorage.setItem('lastCandidateResultSessionId', resultWithSessionId.sessionId);
+        this.router.navigate(['/exam/result'], { state: { result: resultWithSessionId } });
       },
       error: (err) => {
         this.submitting = false;
@@ -479,7 +572,49 @@ export class ExamSessionComponent implements OnInit, OnDestroy {
     this.router.navigate(['/candidate/dashboard']);
   }
 
-  // ─── Prevent context menu during exam ───────────────────────────────
-  @HostListener('contextmenu', ['$event'])
-  onContextMenu(e: Event): void { e.preventDefault(); }
+  private enforceViolationExit(): void {
+    const limit = this.session?.maxViolations || 3;
+    if (this.violationCount < limit || this.isSuspended) return;
+
+    this.stopTimer();
+    this.proctoringService.cleanup();
+    this.isSuspended = true;
+    this.suspendReason = `Maximum violations reached (${this.violationCount}/${limit}). Test has been exited.`;
+    this.forceExitAfterSuspension();
+  }
+
+  private shouldCountViolation(type: string): boolean {
+
+  // 🔥 Ignore first automatic violation on page load
+  if (!this.isFirstViolationIgnored) {
+    this.isFirstViolationIgnored = true;
+    return false;
+  }
+
+  const now = Date.now();
+  const group = this.violationGroup(type);
+
+  if (group === this.lastViolationGroup && now - this.lastViolationAt < this.violationDebounceMs) {
+    return false;
+  }
+
+  this.lastViolationGroup = group;
+  this.lastViolationAt = now;
+  return true;
+}
+
+  private violationGroup(type: string): string {
+    if (type === 'TabSwitch' || type === 'WindowBlur' || type === 'FullscreenExit') return 'focus-change';
+    return type;
+  }
+
+  private forceExitAfterSuspension(): void {
+    this.snackBar.open('Test exited due to policy violation.', 'Close', { duration: 2500 });
+    window.setTimeout(() => {
+      this.proctoringService.exitFullscreen();
+      this.router.navigate(['/candidate/dashboard']);
+    }, 1200);
+  }
+
+  // Context menu blocking disabled for testing/inspect usage.
 }

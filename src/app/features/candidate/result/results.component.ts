@@ -1,14 +1,17 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
+import { Subscription } from 'rxjs';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { CandidateService } from '../../../core/services/candidate.service';
-import { TestResult } from '../../../shared/models/models';
+import { GetMyResult, TestResult } from '../../../shared/models/models';
 
 @Component({
+
   selector: 'app-results',
   standalone: true,
+
   imports: [CommonModule, MatIconModule, MatProgressSpinnerModule],
   template: `
     <div class="page-header" style="margin-bottom:28px">
@@ -21,16 +24,17 @@ import { TestResult } from '../../../shared/models/models';
     </div>
 
     <div class="results-list" *ngIf="!loading">
-      <div class="result-card" *ngFor="let r of results" [class.passed]="r.passed" [class.failed]="!r.passed">
+      <div class="result-card" *ngFor="let r of results" [class.passed]="r.isPassed" [class.failed]="!r.isPassed">
         <div class="rc-left">
-          <div class="rc-badge" [class.pass]="r.passed" [class.fail]="!r.passed">
-            {{ r.passed ? 'PASS' : 'FAIL' }}
+          <div class="rc-badge" [class.pass]="r.isPassed" [class.fail]="!r.isPassed">
+            {{ r.isPassed ? 'PASS' : 'FAIL' }}
           </div>
           <div class="rc-info">
             <h3>{{ r.testTitle }}</h3>
             <div class="rc-meta">
               <span>{{ r.correctAnswers }}/{{ r.totalQuestions }} correct</span>
-              <span>{{ r.timeTaken }} min taken</span>
+              
+              <span>{{ getFormattedTime(r) }}</span>
             </div>
           </div>
         </div>
@@ -39,16 +43,16 @@ import { TestResult } from '../../../shared/models/models';
             <svg viewBox="0 0 44 44">
               <circle cx="22" cy="22" r="18" fill="none" stroke="var(--color-border)" stroke-width="4"/>
               <circle cx="22" cy="22" r="18" fill="none"
-                [attr.stroke]="r.passed ? '#3dd68c' : '#f75f4f'"
+                [attr.stroke]="r.isPassed ? '#3dd68c' : '#f75f4f'"
                 stroke-width="4"
                 stroke-dasharray="113"
-                [attr.stroke-dashoffset]="113 - (113 * r.percentage / 100)"
+                [attr.stroke-dashoffset]="113 - (113 * displayPercentage(r) / 100)"
                 stroke-linecap="round"
                 transform="rotate(-90 22 22)"/>
             </svg>
-            <span class="score-pct">{{ r.percentage.toFixed(0) }}%</span>
+            <span class="score-pct">{{ displayPercentage(r).toFixed(0) }}%</span>
           </div>
-          <div class="score-label">{{ r.score }}/{{ r.totalMarks }}</div>
+          <div class="score-label">{{ displayScore(r) }}/{{ displayTotalMarks(r) }}</div>
         </div>
       </div>
 
@@ -97,22 +101,111 @@ import { TestResult } from '../../../shared/models/models';
     .score-label { font-size: 12px; color: var(--color-text-muted); font-family: var(--font-mono); }
   `]
 })
-export class ResultsComponent implements OnInit {
-  results: TestResult[] = [];
+
+export class ResultsComponent implements OnInit, OnDestroy {
+  results: GetMyResult[] = [];
   loading = true;
+  private readonly lastResultSessionIdKey = 'lastCandidateResultSessionId';
+  private routeSub?: Subscription;
 
   constructor(private candidateService: CandidateService, private route: ActivatedRoute) {}
 
+  getFormattedTime(r: GetMyResult): string {
+  if (!r.startTime || !r.endTime) return '-';
+
+  const diffMs = new Date(r.endTime).getTime() - new Date(r.startTime).getTime();
+  const totalSeconds = Math.floor(diffMs / 1000);
+
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+
+  return `${mins}m ${secs}s`;
+}
   ngOnInit(): void {
-    const sessionId = this.route.snapshot.paramMap.get('sessionId') || this.route.snapshot.queryParamMap.get('sessionId');
+    this.routeSub = this.route.queryParamMap.subscribe(() => this.fetchResult());
+  }
+
+  ngOnDestroy(): void {
+    this.routeSub?.unsubscribe();
+  }
+
+  private fetchResult(): void {
+    this.loading = true;
+
+    const sessionId = this.getValidSessionId(
+      this.route.snapshot.paramMap.get('sessionId') ||
+      this.route.snapshot.queryParamMap.get('sessionId') ||
+      localStorage.getItem(this.lastResultSessionIdKey)
+    );
+
     if (!sessionId) {
+      this.results = [];
       this.loading = false;
       return;
     }
 
-    this.candidateService.getSessionResult(sessionId).subscribe({
-      next: result => { this.results = [result]; this.loading = false; },
-      error: () => this.loading = false
+    this.candidateService.getMyResults(sessionId).subscribe({
+      next: res => {
+        const data = (res as any)?.data ?? (res as any)?.Data ?? res;
+        this.results = data ? [this.normalizeResult(data as GetMyResult, sessionId)] : [];
+        this.loading = false;
+      },
+      error: () => {
+        this.results = [];
+        this.loading = false;
+      }
     });
+  }
+
+  displayScore(result: GetMyResult | TestResult): number {
+    return this.coerceNumber(result, ['score', 'Score', 'obtainedMarks', 'ObtainedMarks', 'marksObtained', 'MarksObtained', 'earnedMarks', 'EarnedMarks', 'totalScore', 'TotalScore']);
+  }
+
+  displayTotalMarks(result: GetMyResult | TestResult): number {
+    return this.coerceNumber(result, ['totalMarks', 'TotalMarks', 'maxMarks', 'MaxMarks', 'testMarks', 'TestMarks']);
+  }
+
+  displayPercentage(result: GetMyResult | TestResult): number {
+    return this.coerceNumber(result, ['percentage', 'Percentage', 'percent', 'Percent']);
+  }
+
+  private coerceNumber(result: GetMyResult | TestResult, keys: string[]): number {
+    const source = result as Record<string, any>;
+    for (const key of keys) {
+      const value = source[key];
+      if (typeof value === 'number' && Number.isFinite(value)) return value;
+      if (typeof value === 'string' && value.trim() && !Number.isNaN(Number(value))) return Number(value);
+    }
+    return 0;
+  }
+
+  private getValidSessionId(sessionId: string | null): string | null {
+    if (!sessionId) return null;
+
+    const trimmed = sessionId.trim();
+    const normalized = trimmed.toLowerCase();
+
+    return trimmed && normalized !== 'null' && normalized !== 'undefined' ? trimmed : null;
+  }
+
+  private normalizeResult(result: GetMyResult, fallbackSessionId: string): GetMyResult {
+    return {
+      ...result,
+      sessionId: this.getValidSessionId(result.sessionId) || fallbackSessionId,
+      isPassed: this.coerceBoolean(result as Record<string, any>, ['isPassed', 'IsPassed', 'passed', 'Passed'])
+    };
+  }
+
+  private coerceBoolean(source: Record<string, any>, keys: string[]): boolean {
+    for (const key of keys) {
+      const value = source[key];
+      if (typeof value === 'boolean') return value;
+      if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (normalized === 'true') return true;
+        if (normalized === 'false') return false;
+      }
+    }
+    return false;
   }
 }

@@ -28,13 +28,13 @@ import { TestResult } from '../../../shared/models/models';
                 [attr.stroke]="result.passed ? '#3dd68c' : '#f75f4f'"
                 stroke-width="8"
                 stroke-dasharray="314"
-                [attr.stroke-dashoffset]="314 - (314 * result.percentage / 100)"
+                [attr.stroke-dashoffset]="314 - (314 * displayPercentage(result) / 100)"
                 stroke-linecap="round"
                 transform="rotate(-90 60 60)"
                 style="transition: stroke-dashoffset 1.5s ease"/>
             </svg>
             <div class="ring-content">
-              <div class="ring-pct">{{ result.percentage.toFixed(1) }}%</div>
+              <div class="ring-pct">{{ displayPercentage(result).toFixed(1) }}%</div>
               <div class="ring-label">{{ result.passed ? 'PASSED' : 'FAILED' }}</div>
             </div>
           </div>
@@ -43,21 +43,21 @@ import { TestResult } from '../../../shared/models/models';
             <div class="detail-item">
               <mat-icon>grade</mat-icon>
               <div>
-                <div class="di-value">{{ result.score }} / {{ result.totalMarks }}</div>
+                <div class="di-value">{{ displayScore(result) }} / {{ displayTotalMarks(result) }}</div>
                 <div class="di-label">Total Score</div>
               </div>
             </div>
             <div class="detail-item">
               <mat-icon>check_circle</mat-icon>
               <div>
-                <div class="di-value">{{ result.correctAnswers }} / {{ result.totalQuestions }}</div>
+                <div class="di-value">{{ displayCorrectAnswers(result) }} / {{ displayTotalQuestions(result) }}</div>
                 <div class="di-label">Correct Answers</div>
               </div>
             </div>
             <div class="detail-item">
               <mat-icon>timer</mat-icon>
               <div>
-                <div class="di-value">{{ result.timeTaken }} min</div>
+                <div class="di-value">{{ displayTimeTaken(result) }} min</div>
                 <div class="di-label">Time Taken</div>
               </div>
             </div>
@@ -88,7 +88,7 @@ import { TestResult } from '../../../shared/models/models';
           <a routerLink="/candidate/dashboard" class="btn-home">
             <mat-icon>home</mat-icon> Go to Dashboard
           </a>
-          <a [routerLink]="['/candidate/results', result.sessionId]" class="btn-results">
+          <a [routerLink]="result.sessionId ? ['/candidate/results', result.sessionId] : ['/candidate/results']" class="btn-results">
             <mat-icon>leaderboard</mat-icon> View All Results
           </a>
         </div>
@@ -181,6 +181,41 @@ export class ExamResultComponent implements OnInit {
   ngOnInit(): void {
     const nav = this.router.getCurrentNavigation();
     const state = nav?.extras?.state as { result: TestResult } | undefined;
-    this.result = state?.result ?? history.state?.result ?? null;
+    const response = state?.result ?? history.state?.result ?? null;
+    this.result = response?.data ?? response ?? null;
+  }
+
+  displayScore(result: TestResult | null): number {
+    return this.coerceNumber(result, ['score', 'Score', 'obtainedMarks', 'ObtainedMarks', 'marksObtained', 'MarksObtained', 'earnedMarks', 'EarnedMarks', 'totalScore', 'TotalScore']);
+  }
+
+  displayTotalMarks(result: TestResult | null): number {
+    return this.coerceNumber(result, ['totalMarks', 'TotalMarks', 'maxMarks', 'MaxMarks', 'testMarks', 'TestMarks']);
+  }
+
+  displayPercentage(result: TestResult | null): number {
+    return this.coerceNumber(result, ['percentage', 'Percentage', 'percent', 'Percent']);
+  }
+
+  displayCorrectAnswers(result: TestResult | null): number {
+    return this.coerceNumber(result, ['correctAnswers', 'CorrectAnswers', 'rightAnswers', 'RightAnswers', 'correctCount', 'CorrectCount']);
+  }
+
+  displayTotalQuestions(result: TestResult | null): number {
+    return this.coerceNumber(result, ['totalQuestions', 'TotalQuestions', 'questionCount', 'QuestionCount', 'questionsCount', 'QuestionsCount']);
+  }
+
+  displayTimeTaken(result: TestResult | null): number {
+    return this.coerceNumber(result, ['timeTaken', 'TimeTaken', 'duration', 'Duration', 'timeSpent', 'TimeSpent', 'elapsedMinutes', 'ElapsedMinutes']);
+  }
+
+  private coerceNumber(result: TestResult | null, keys: string[]): number {
+    const source = (result ?? {}) as Record<string, any>;
+    for (const key of keys) {
+      const value = source[key];
+      if (typeof value === 'number' && Number.isFinite(value)) return value;
+      if (typeof value === 'string' && value.trim() && !Number.isNaN(Number(value))) return Number(value);
+    }
+    return 0;
   }
 }

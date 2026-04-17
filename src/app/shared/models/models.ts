@@ -84,9 +84,12 @@ export interface QuestionOption {
 }
 
 export interface CreateQuestionRequest {
-  testId: string;
   questionText: string;
-  options: CreateOptionRequest[];
+  optionA: string;
+  optionB: string;
+  optionC: string;
+  optionD: string;
+  correctOption:string;
   marks: number;
   order: number;
 }
@@ -99,6 +102,7 @@ export interface CreateOptionRequest {
 // ─── Test Assignment Models ────────────────────────────────────────────
 export interface TestAssignment {
   id: string;
+  sessionId?: string;
   testId: string;
   userId: string;
   testTitle: string;
@@ -155,16 +159,46 @@ export interface StartSessionResponse {
 
 // ─── Answer Models ─────────────────────────────────────────────────────
 export interface SubmitAnswerRequest {
-  sessionId: string;
   questionId: string;
   selectedOptionId: string;
 }
 
 export interface SubmitTestRequest {
+sessionId: string;
+  testTitle: string;
+  totalMarks: number;
+  PassingMarks: number;
+  score: number;
+  percentage: number;
+  Ispassed: boolean;
+  status: string;
+  startTime: Date;
+  endTime: Date;
+  violationCount: number;
+  totalQuestions: number;
+  correctAnswers: number;
+  errotrs?: string[];
+}
+
+export interface GetMyResult {
+[x: string]: any;
   sessionId: string;
+  testTitle: string;
+  totalMarks: number;
+  passingMarks: number;
+  score: number;
+  percentage: number;
+  isPassed: boolean;
+  status: string;
+  startTime: string;
+  endTime: string;
+  violationCount: number;
+  totalQuestions: number;
+  correctAnswers: number;
 }
 
 export interface TestResult {
+  data: any;
   sessionId: string;
   testTitle: string;
   score: number;
@@ -218,6 +252,7 @@ export interface Screenshot {
   userId: string;
   userName: string;
   imageUrl: string;
+  filePath?: string;
   imageBase64?: string;
   capturedAt: string;
 }

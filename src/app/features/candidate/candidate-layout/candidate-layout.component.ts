@@ -13,6 +13,7 @@ const TITLE_MAP: Record<string, string> = {
   '/candidate/dashboard': 'Dashboard',
   '/candidate/tests': 'My Tests',
   '/candidate/results': 'My Results',
+  '/candidate/profile': 'My Profile',
 };
 
 @Component({

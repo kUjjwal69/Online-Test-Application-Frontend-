@@ -25,8 +25,17 @@ import { TestSession, Violation, Screenshot } from '../../../shared/models/model
         </div>
         <div class="header-right">
           <span class="status-chip" [ngClass]="session.status.toLowerCase()">{{ session.status }}</span>
+
           <button class="btn-danger" *ngIf="session.status === 'Active'" (click)="suspendSession()">
             <mat-icon>block</mat-icon> Suspend
+          </button>
+
+          <button class="btn-danger" *ngIf="session.userId" (click)="blockUser()">
+            <mat-icon>person_off</mat-icon> Block User
+          </button>
+
+          <button class="btn-primary" *ngIf="session.isSuspended || session.status === 'Suspended'" (click)="allowRetest()">
+            <mat-icon>refresh</mat-icon> Allow Retest
           </button>
         </div>
       </div>
@@ -77,8 +86,8 @@ import { TestSession, Violation, Screenshot } from '../../../shared/models/model
           <h3 class="panel-title"><mat-icon>screenshot_monitor</mat-icon> Screenshots ({{ screenshots.length }})</h3>
           <div class="screenshots-grid">
             <div class="screenshot-thumb" *ngFor="let ss of screenshots" (click)="viewScreenshot(ss)">
-              <img *ngIf="ss.imageBase64" [src]="'data:image/jpeg;base64,' + ss.imageBase64" alt="screenshot" />
-              <div *ngIf="!ss.imageBase64" class="no-img"><mat-icon>image</mat-icon></div>
+              <img *ngIf="getScreenshotSrc(ss)" [src]="getScreenshotSrc(ss)" alt="screenshot" />
+              <div *ngIf="!getScreenshotSrc(ss)" class="no-img"><mat-icon>image</mat-icon></div>
               <div class="ss-time">{{ ss.capturedAt | date:'shortTime' }}</div>
             </div>
             <div class="empty-state" *ngIf="screenshots.length === 0">
@@ -99,6 +108,8 @@ import { TestSession, Violation, Screenshot } from '../../../shared/models/model
     .header-right { display: flex; align-items: center; gap: 12px; }
     .btn-danger { display: flex; align-items: center; gap: 6px; padding: 10px 16px; background: var(--color-danger); color: #fff; border: none; border-radius: var(--radius-sm); font-size: 14px; font-weight: 600; cursor: pointer; font-family: var(--font-main); }
     .btn-danger mat-icon { font-size: 18px !important; width: 18px; height: 18px; }
+    .btn-primary { display: flex; align-items: center; gap: 6px; padding: 10px 16px; background: #4f8ef7; color: #fff; border: none; border-radius: var(--radius-sm); font-size: 14px; font-weight: 600; cursor: pointer; font-family: var(--font-main); }
+    .btn-primary mat-icon { font-size: 18px !important; width: 18px; height: 18px; }
     .panel { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 24px; }
     .panel-title { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; margin-bottom: 16px; }
     .panel-title mat-icon { font-size: 20px !important; width: 20px; height: 20px; color: var(--color-text-muted); }
@@ -116,25 +127,90 @@ import { TestSession, Violation, Screenshot } from '../../../shared/models/model
   `]
 })
 export class SessionDetailComponent implements OnInit {
-  session: TestSession | null = null; violations: Violation[] = []; screenshots: Screenshot[] = []; loading = true;
+  session: TestSession | null = null;
+  violations: Violation[] = [];
+  screenshots: Screenshot[] = [];
+  loading = true;
+
   get timeTaken(): string {
     if (!this.session?.startTime || !this.session?.endTime) return '—';
     const diff = new Date(this.session.endTime).getTime() - new Date(this.session.startTime).getTime();
     const mins = Math.floor(diff / 60000);
     return `${mins}m`;
   }
-  constructor(private route: ActivatedRoute, private adminService: AdminService, private snackBar: MatSnackBar) {}
+
+  constructor(
+    private route: ActivatedRoute,
+    private adminService: AdminService,
+    private snackBar: MatSnackBar
+  ) {}
+
   ngOnInit(): void {
     const id = this.route.snapshot.params['id'];
-    forkJoin({ session: this.adminService.getSessionById(id), violations: this.adminService.getAllViolations(id), screenshots: this.adminService.getScreenshots(id) }).subscribe({
-      next: (r) => { this.session = r.session; this.violations = r.violations; this.screenshots = r.screenshots; this.loading = false; },
+    forkJoin({
+      session: this.adminService.getSessionById(id),
+      violations: this.adminService.getAllViolations(id),
+      screenshots: this.adminService.getScreenshots(id)
+    }).subscribe({
+      next: (r) => {
+        this.session = r.session;
+        this.violations = r.violations;
+        this.screenshots = r.screenshots;
+        this.loading = false;
+      },
       error: () => this.loading = false
     });
   }
+
   suspendSession(): void {
     const reason = prompt('Reason for suspension:');
     if (!reason || !this.session) return;
-    this.adminService.suspendSession({ sessionId: this.session.id, reason }).subscribe({ next: () => { this.snackBar.open('Suspended', 'OK'); if (this.session) this.session.status = 'Suspended'; }, error: () => this.snackBar.open('Failed', 'Close') });
+    this.adminService.suspendSession({ sessionId: this.session.id, reason }).subscribe({
+      next: () => {
+        this.snackBar.open('Session suspended', 'OK');
+        if (this.session) this.session.status = 'Suspended';
+      },
+      error: () => this.snackBar.open('Failed to suspend', 'Close')
+    });
   }
-  viewScreenshot(ss: Screenshot): void { if (ss.imageBase64) window.open('data:image/jpeg;base64,' + ss.imageBase64, '_blank'); }
+
+  blockUser(): void {
+    if (!this.session?.userId) return;
+    if (!confirm(`Block user "${this.session.userName}"? They will no longer be able to log in.`)) return;
+
+    this.adminService.blockUser(this.session.userId).subscribe({
+      next: () => {
+        this.snackBar.open('User blocked successfully', 'OK');
+        if (this.session) {
+          this.session.status = 'Suspended';
+          this.session.isSuspended = true;
+        }
+      },
+      error: () => this.snackBar.open('Failed to block user', 'Close')
+    });
+  }
+
+  allowRetest(): void {
+    if (!this.session) return;
+    if (!confirm(`Allow "${this.session.userName}" to retake this test?`)) return;
+
+    this.adminService.allowRetest(this.session.id).subscribe({
+      next: () => {
+        this.snackBar.open('Retest allowed', 'OK');
+        if (this.session) this.session.status = 'Active';  // reset status visually
+        if (this.session) this.session.isSuspended = false;
+      },
+      error: () => this.snackBar.open('Failed to allow retest', 'Close')
+    });
+  }
+
+  viewScreenshot(ss: Screenshot): void {
+    const src = this.getScreenshotSrc(ss);
+    if (src) window.open(src, '_blank');
+  }
+
+  getScreenshotSrc(ss: Screenshot): string {
+    if (ss.imageBase64) return 'data:image/jpeg;base64,' + ss.imageBase64;
+    return ss.imageUrl || '';
+  }
 }

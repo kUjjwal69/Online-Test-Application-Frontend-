@@ -1,6 +1,6 @@
 import { Injectable, NgZone } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, Subject, interval, Subscription } from 'rxjs';
+import { Observable, Subject, interval, Subscription, map } from 'rxjs';
 import { ScreenshotRequest, ViolationRequest, ViolationType, VideoChunkRequest } from '../../shared/models/models';
 import { API_ENDPOINTS } from '../config/api-endpoints';
 
@@ -13,7 +13,14 @@ export class ProctoringService {
   private mediaRecorder?: MediaRecorder;
   private screenStream?: MediaStream;
   private webcamStream?: MediaStream;
+  private hasEnteredFullscreen = false;
   private chunkIndex = 0;
+  private readonly visibilityHandler = () => this.onVisibilityChange(this.activeSessionId);
+  // private readonly blurHandler = () => this.onWindowBlur(this.activeSessionId);
+  private readonly fullscreenHandler = () => this.onFullscreenChange(this.activeSessionId);
+  private readonly contextMenuHandler = (e: Event) => this.onContextMenu(this.activeSessionId, e);
+  private readonly keydownHandler = (e: KeyboardEvent) => this.onKeydown(this.activeSessionId, e);
+  private activeSessionId = '';
 
   public violationDetected$ = new Subject<{ type: ViolationType; description: string }>();
   public sessionSuspended$ = new Subject<string>();
@@ -22,17 +29,27 @@ export class ProctoringService {
 
   // ─── Screenshot ────────────────────────────────────────────────────
   sendScreenshot(request: ScreenshotRequest): Observable<void> {
-    return this.http.post<void>(`${this.proctoringApiUrl}/screenshot`, request);
+    return this.http.post<void>(`${this.proctoringApiUrl}/sessions/${request.sessionId}/screenshot`, request);
   }
 
   // ─── Violations ────────────────────────────────────────────────────
   logViolation(request: ViolationRequest): Observable<{ violationCount: number; isSuspended: boolean; suspendReason?: string }> {
-    return this.http.post<any>(`${this.proctoringApiUrl}/violation`, request);
+    return this.http.post<any>(`${this.proctoringApiUrl}/sessions/${request.sessionId}/violation`, request).pipe(
+      // Backend can return wrapped payloads, e.g. { data: { isSuspended: true } }.
+      map((response: any) => {
+        const payload = response?.data ?? response?.Data ?? response ?? {};
+        return {
+          violationCount: Number(payload?.violationCount ?? payload?.ViolationCount ?? 0),
+          isSuspended: Boolean(payload?.isSuspended ?? payload?.IsSuspended ?? false),
+          suspendReason: payload?.suspendReason ?? payload?.SuspendReason
+        };
+      })
+    );
   }
 
   // ─── Video Chunks ──────────────────────────────────────────────────
   sendVideoChunk(request: VideoChunkRequest): Observable<void> {
-    return this.http.post<void>(`${this.proctoringApiUrl}/video-chunk`, request);
+    return this.http.post<void>(`${this.proctoringApiUrl}/sessions/${request.sessionId}/video/chunk`, request);
   }
 
   // ─── Auto Screenshot ───────────────────────────────────────────────
@@ -80,22 +97,25 @@ export class ProctoringService {
 
   // ─── Violation Listeners ───────────────────────────────────────────
   setupViolationListeners(sessionId: string): void {
-    document.addEventListener('visibilitychange', this.onVisibilityChange.bind(this, sessionId));
-    window.addEventListener('blur', this.onWindowBlur.bind(this, sessionId));
-    document.addEventListener('fullscreenchange', this.onFullscreenChange.bind(this, sessionId));
-    document.addEventListener('contextmenu', this.onContextMenu.bind(this, sessionId));
-    document.addEventListener('keydown', this.onKeydown.bind(this, sessionId));
+    this.activeSessionId = sessionId;
+    document.addEventListener('visibilitychange', this.visibilityHandler);
+    // window.addEventListener('blur', this.blurHandler);
+    document.addEventListener('fullscreenchange', this.fullscreenHandler);
+    document.addEventListener('contextmenu', this.contextMenuHandler);
+    document.addEventListener('keydown', this.keydownHandler);
   }
 
-  removeViolationListeners(sessionId: string): void {
-    document.removeEventListener('visibilitychange', this.onVisibilityChange.bind(this, sessionId));
-    window.removeEventListener('blur', this.onWindowBlur.bind(this, sessionId));
-    document.removeEventListener('fullscreenchange', this.onFullscreenChange.bind(this, sessionId));
-    document.removeEventListener('contextmenu', this.onContextMenu.bind(this, sessionId));
-    document.removeEventListener('keydown', this.onKeydown.bind(this, sessionId));
+  removeViolationListeners(_sessionId: string): void {
+    document.removeEventListener('visibilitychange', this.visibilityHandler);
+    // window.removeEventListener('blur', this.blurHandler);
+    document.removeEventListener('fullscreenchange', this.fullscreenHandler);
+    document.removeEventListener('contextmenu', this.contextMenuHandler);
+    document.removeEventListener('keydown', this.keydownHandler);
+    this.activeSessionId = '';
   }
 
   private onVisibilityChange(sessionId: string): void {
+    if (!sessionId) return;
     if (document.visibilityState === 'hidden') {
       this.ngZone.run(() => {
         this.violationDetected$.next({ type: 'TabSwitch', description: 'Candidate switched tab or minimized window.' });
@@ -106,6 +126,7 @@ export class ProctoringService {
   }
 
   private onWindowBlur(sessionId: string): void {
+    if (!sessionId) return;
     this.ngZone.run(() => {
       this.violationDetected$.next({ type: 'WindowBlur', description: 'Candidate moved focus away from exam window.' });
       this.logViolation({ sessionId, violationType: 'WindowBlur', description: 'Window lost focus', occurredAt: new Date().toISOString() })
@@ -113,18 +134,29 @@ export class ProctoringService {
     });
   }
 
-  private onFullscreenChange(sessionId: string): void {
-    if (!document.fullscreenElement) {
-      this.ngZone.run(() => {
-        this.violationDetected$.next({ type: 'FullscreenExit', description: 'Candidate exited fullscreen mode.' });
-        this.logViolation({ sessionId, violationType: 'FullscreenExit', description: 'Exited fullscreen', occurredAt: new Date().toISOString() })
-          .subscribe(res => this.checkSuspension(res));
+ private onFullscreenChange(sessionId: string): void {
+  if (!sessionId) return;
+
+  // Only trigger violation if user had entered fullscreen before
+  if (this.hasEnteredFullscreen && !document.fullscreenElement) {
+    this.ngZone.run(() => {
+      this.violationDetected$.next({
+        type: 'FullscreenExit',
+        description: 'Candidate exited fullscreen mode.'
       });
-    }
+
+      this.logViolation({
+        sessionId,
+        violationType: 'FullscreenExit',
+        description: 'Exited fullscreen',
+        occurredAt: new Date().toISOString()
+      }).subscribe(res => this.checkSuspension(res));
+    });
   }
+}
 
   private onContextMenu(sessionId: string, e: Event): void {
-    e.preventDefault();
+    if (!sessionId) return;
     this.ngZone.run(() => {
       this.violationDetected$.next({ type: 'ContextMenu', description: 'Candidate attempted right-click.' });
       this.logViolation({ sessionId, violationType: 'ContextMenu', description: 'Right-click attempted', occurredAt: new Date().toISOString() })
@@ -133,16 +165,8 @@ export class ProctoringService {
   }
 
   private onKeydown(sessionId: string, e: KeyboardEvent): void {
-    const forbidden = (e.ctrlKey && ['c', 'v', 'a', 'u', 's', 'p'].includes(e.key.toLowerCase()))
-      || e.key === 'F12' || e.key === 'PrintScreen';
-    if (forbidden) {
-      e.preventDefault();
-      this.ngZone.run(() => {
-        this.violationDetected$.next({ type: 'KeyboardShortcut', description: `Forbidden key: ${e.key}` });
-        this.logViolation({ sessionId, violationType: 'KeyboardShortcut', description: `Key: ${e.key}`, occurredAt: new Date().toISOString() })
-          .subscribe(res => this.checkSuspension(res));
-      });
-    }
+    // Temporarily disabled to allow DevTools/inspect usage during testing.
+    if (!sessionId) return;
   }
 
   private checkSuspension(res: { isSuspended: boolean; suspendReason?: string }): void {
@@ -195,7 +219,10 @@ export class ProctoringService {
 
   // ─── Fullscreen ────────────────────────────────────────────────────
   enterFullscreen(): void {
-    document.documentElement.requestFullscreen().catch(() => {});
+    document.documentElement.requestFullscreen() .then(() => {
+      this.hasEnteredFullscreen = true;
+    })
+    .catch(() => {});
   }
 
   exitFullscreen(): void {

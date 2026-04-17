@@ -45,12 +45,12 @@ import { Question, CreateQuestionRequest, CreateOptionRequest } from '../../../s
         </div>
         <div class="options-section">
           <label>Answer Options (mark the correct one)</label>
-          <div class="option-row" *ngFor="let opt of newQuestion.options; let i = index">
+          <div class="option-row" *ngFor="let opt of questionOptions; let i = index">
             <input type="radio" name="correctOption" [value]="i" [(ngModel)]="correctOptionIndex" />
             <input type="text" [(ngModel)]="opt.optionText" [name]="'opt_'+i" required placeholder="Option {{ i+1 }}" />
-            <button type="button" class="icon-btn danger" (click)="removeOption(i)" *ngIf="newQuestion.options.length > 2"><mat-icon>close</mat-icon></button>
+            <button type="button" class="icon-btn danger" (click)="removeOption(i)" *ngIf="questionOptions.length > 2"><mat-icon>close</mat-icon></button>
           </div>
-          <button type="button" class="btn-ghost" (click)="addOption()" *ngIf="newQuestion.options.length < 6">
+          <button type="button" class="btn-ghost" (click)="addOption()" *ngIf="questionOptions.length < 4">
             <mat-icon>add</mat-icon> Add Option
           </button>
         </div>
@@ -134,14 +134,28 @@ export class QuestionsComponent implements OnInit {
   showAddForm = false;
   addingQuestion = false;
   correctOptionIndex = -1;
+  questionOptions: CreateOptionRequest[] = [
+    { optionText: '', isCorrect: false },
+    { optionText: '', isCorrect: false },
+    { optionText: '', isCorrect: false },
+    { optionText: '', isCorrect: false }
+  ];
 
-  newQuestion: CreateQuestionRequest = { testId: '', questionText: '', options: [{optionText:'',isCorrect:false},{optionText:'',isCorrect:false},{optionText:'',isCorrect:false},{optionText:'',isCorrect:false}], marks: 1, order: 1 };
+  newQuestion: CreateQuestionRequest = {
+    questionText: '',
+    optionA: '',
+    optionB: '',
+    optionC: '',
+    optionD: '',
+    correctOption: '',
+    marks: 1,
+    order: 0
+  };
 
   constructor(private route: ActivatedRoute, private adminService: AdminService, private snackBar: MatSnackBar) {}
 
   ngOnInit(): void {
     this.testId = this.route.snapshot.params['id'];
-    this.newQuestion.testId = this.testId;
     this.loadQuestions();
   }
 
@@ -150,20 +164,59 @@ export class QuestionsComponent implements OnInit {
     this.adminService.getQuestionsByTest(this.testId).subscribe({ next: q => { this.questions = q; this.loading = false; }, error: () => this.loading = false });
   }
 
-  addOption(): void { this.newQuestion.options.push({ optionText: '', isCorrect: false }); }
-  removeOption(i: number): void { this.newQuestion.options.splice(i, 1); if (this.correctOptionIndex === i) this.correctOptionIndex = -1; }
+  addOption(): void {
+    if (this.questionOptions.length >= 4) return;
+    this.questionOptions.push({ optionText: '', isCorrect: false });
+  }
+
+  removeOption(i: number): void {
+    this.questionOptions.splice(i, 1);
+    if (this.correctOptionIndex === i) this.correctOptionIndex = -1;
+    if (this.correctOptionIndex > i) this.correctOptionIndex--;
+  }
 
   addQuestion(): void {
     if (this.correctOptionIndex < 0) { this.snackBar.open('Please mark the correct answer', 'Close'); return; }
-    this.newQuestion.options.forEach((opt, i) => opt.isCorrect = i === this.correctOptionIndex);
+    const normalizedOptions = this.questionOptions
+      .slice(0, 4)
+      .map((opt: CreateOptionRequest, i: number) => ({
+        optionText: opt.optionText.trim(),
+        isCorrect: i === this.correctOptionIndex
+      }));
+
+    if (normalizedOptions.length < 4 || normalizedOptions.some(opt => !opt.optionText)) {
+      this.snackBar.open('Please enter four answer options', 'Close');
+      return;
+    }
+
+    this.newQuestion.optionA = normalizedOptions[0].optionText;
+    this.newQuestion.optionB = normalizedOptions[1].optionText;
+    this.newQuestion.optionC = normalizedOptions[2].optionText;
+    this.newQuestion.optionD = normalizedOptions[3].optionText;
+    this.newQuestion.correctOption = String.fromCharCode(65 + this.correctOptionIndex);
     this.addingQuestion = true;
-    this.adminService.createQuestion(this.newQuestion).subscribe({
+    this.adminService.createQuestion(this.testId, this.newQuestion).subscribe({
       next: () => {
         this.addingQuestion = false;
         this.snackBar.open('Question added!', 'OK');
         this.showAddForm = false;
         this.correctOptionIndex = -1;
-        this.newQuestion = { testId: this.testId, questionText: '', options: [{optionText:'',isCorrect:false},{optionText:'',isCorrect:false},{optionText:'',isCorrect:false},{optionText:'',isCorrect:false}], marks: 1, order: this.questions.length + 1 };
+        this.newQuestion = {
+          questionText: '',
+          optionA: '',
+          optionB: '',
+          optionC: '',
+          optionD: '',
+          correctOption: '',
+          marks: 1,
+          order: this.questions.length + 1
+        };
+        this.questionOptions = [
+          { optionText: '', isCorrect: false },
+          { optionText: '', isCorrect: false },
+          { optionText: '', isCorrect: false },
+          { optionText: '', isCorrect: false }
+        ];
         this.loadQuestions();
       },
       error: (err) => { this.addingQuestion = false; this.snackBar.open(err.error?.message || 'Failed to add question', 'Close'); }

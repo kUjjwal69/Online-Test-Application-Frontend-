@@ -12,6 +12,12 @@ import { AuthService } from '../../../core/services/auth.service';
   imports: [CommonModule, FormsModule, RouterLink, MatSnackBarModule, MatProgressSpinnerModule],
   template: `
     <div class="auth-page">
+      <div class="login-overlay" *ngIf="redirecting">
+        <div class="login-message">
+          <mat-spinner diameter="20" strokeWidth="3"></mat-spinner>
+          <span>Signing you in...</span>
+        </div>
+      </div>
       <div class="auth-brand">
         <div class="brand-logo">
           <span class="logo-icon">⬡</span>
@@ -100,6 +106,30 @@ import { AuthService } from '../../../core/services/auth.service';
       display: grid;
       grid-template-columns: 1fr 1fr;
       background: var(--color-bg);
+      position: relative;
+    }
+    .login-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(10, 13, 20, 0.36);
+      backdrop-filter: blur(1.5px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+      animation: fadeIn 0.2s ease;
+    }
+    .login-message {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      color: var(--color-text);
+      font-weight: 600;
+      box-shadow: var(--shadow);
     }
 
     /* Brand Panel */
@@ -214,6 +244,7 @@ import { AuthService } from '../../../core/services/auth.service';
       .auth-page { grid-template-columns: 1fr; }
       .auth-brand { display: none; }
     }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   `]
 })
 export class LoginComponent {
@@ -221,6 +252,7 @@ export class LoginComponent {
   password = '';
   showPassword = false;
   loading = false;
+  redirecting = false;
   errorMessage = '';
 
   constructor(private auth: AuthService, private router: Router, private snackBar: MatSnackBar) {}
@@ -231,6 +263,7 @@ export class LoginComponent {
     this.auth.login({ username: this.username.trim(), password: this.password }).subscribe({
       next: (res) => {
         this.loading = false;
+        this.redirecting = true;
         const targetUrl = this.auth.isAdmin() ? '/admin/dashboard' : '/candidate/dashboard';
         console.log('[LoginComponent.loginSuccess]', {
           apiRole: res.role,
@@ -238,12 +271,16 @@ export class LoginComponent {
           isAuthenticated: this.auth.isAuthenticated(),
           targetUrl
         });
-        this.router.navigate([targetUrl]).then(navigated => {
-          console.log('[LoginComponent.navigate]', { targetUrl, navigated });
-        });
+        window.setTimeout(() => {
+          this.router.navigate([targetUrl]).then(navigated => {
+            this.redirecting = false;
+            console.log('[LoginComponent.navigate]', { targetUrl, navigated });
+          });
+        }, 650);
       },
       error: (err) => {
         this.loading = false;
+        this.redirecting = false;
         this.errorMessage = err.error?.message || 'Invalid credentials. Please try again.';
       }
     });

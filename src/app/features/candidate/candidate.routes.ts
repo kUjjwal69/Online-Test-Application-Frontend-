@@ -10,6 +10,7 @@ export const candidateRoutes: Routes = [
       { path: 'tests', loadComponent: () => import('./test-list/test-list.component').then(m => m.TestListComponent) },
       { path: 'results', loadComponent: () => import('./result/results.component').then(m => m.ResultsComponent) },
       { path: 'results/:sessionId', loadComponent: () => import('./result/results.component').then(m => m.ResultsComponent) },
+      { path: 'profile', loadComponent: () => import('../profile/profile.component').then(m => m.ProfileComponent) },
     ]
   }
 ];
