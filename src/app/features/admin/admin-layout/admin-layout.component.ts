@@ -16,6 +16,7 @@ const TITLE_MAP: Record<string, string> = {
   '/admin/dashboard': 'Dashboard',
   '/admin/tests': 'Manage Tests',
   '/admin/users': 'Manage Users',
+  '/admin/profile': 'My Profile',
   '/admin/sessions': 'Test Sessions',
   '/admin/violations': 'Violations',
 };

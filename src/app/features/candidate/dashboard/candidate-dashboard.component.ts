@@ -88,16 +88,20 @@ import { TestAssignment } from '../../../shared/models/models';
 export class CandidateDashboardComponent implements OnInit {
   assignments: TestAssignment[] = []; loading = true;
   today = new Date();
-  get userName(): string { return this.auth.getCurrentUser()?.fullName || 'Candidate'; }
-  get pendingAssignments(): TestAssignment[] { return this.assignments.filter(a => a.status === 'NotStarted'); }
+  get userName(): string { return this.auth.getCurrentUser()?.fullName || this.auth.getCurrentUser()?.username || 'Candidate'; }
+  get pendingAssignments(): TestAssignment[] { return this.assignments.filter(a => a.status === 'NotStarted' || a.status == 'InProgress'); }
   get stats() {
     return {
       assigned: this.assignments.length,
-      pending: this.assignments.filter(a => a.status === 'NotStarted').length,
+      pending: this.assignments.filter(a => a.status === 'NotStarted' || a.status == 'InProgress').length,
       completed: this.assignments.filter(a => a.status === 'Completed').length,
       suspended: this.assignments.filter(a => a.status === 'Suspended').length
     };
   }
   constructor(private candidateService: CandidateService, private auth: AuthService) {}
-  ngOnInit(): void { this.candidateService.getMyAssignments().subscribe({ next: a => { this.assignments = a; this.loading = false; }, error: () => this.loading = false }); }
+  ngOnInit(): void { this.candidateService.getMyAssignments().subscribe({ 
+    next: (a) => { this.assignments =  a; 
+      this.loading = false; }, 
+      error: () => this.loading = false
+     }); }
 }

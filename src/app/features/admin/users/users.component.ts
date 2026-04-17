@@ -5,8 +5,6 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { MatTooltipModule } from '@angular/material/tooltip';
-import { forkJoin, of, switchMap } from 'rxjs';
 import { AdminService } from '../../../core/services/admin.service';
 import { User } from '../../../shared/models/models';
 import { AssignTestDialogComponent } from './assign-test-dialog.component';
@@ -14,7 +12,7 @@ import { AssignTestDialogComponent } from './assign-test-dialog.component';
 @Component({
   selector: 'app-users',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatIconModule, MatProgressSpinnerModule, MatDialogModule, MatSnackBarModule, MatTooltipModule],
+  imports: [CommonModule, FormsModule, MatIconModule, MatProgressSpinnerModule, MatDialogModule, MatSnackBarModule],
   template: `
     <div class="page-header" style="margin-bottom:28px">
       <h1>Candidates</h1>
@@ -34,9 +32,15 @@ import { AssignTestDialogComponent } from './assign-test-dialog.component';
         <span>Email</span>
         <span>Status</span>
         <span>Joined</span>
-        <span>Actions</span>
+        <span></span>
       </div>
-      <div class="table-row" *ngFor="let u of filteredUsers">
+      <div
+        class="table-row clickable-row"
+        *ngFor="let u of filteredUsers"
+        (click)="openUserDetails(u)"
+        tabindex="0"
+        (keydown.enter)="openUserDetails(u)"
+        (keydown.space)="openUserDetails(u); $event.preventDefault()">
         <div class="user-cell">
           <div class="avatar">{{ getUserInitial(u) }}</div>
           <span class="u-name">{{ getUserDisplayName(u) }}</span>
@@ -44,17 +48,7 @@ import { AssignTestDialogComponent } from './assign-test-dialog.component';
         <span class="u-email">{{ u.email || '-' }}</span>
         <span><span class="status-chip" [ngClass]="u.isActive ? 'active' : 'suspended'">{{ u.isActive ? 'Active' : 'Inactive' }}</span></span>
         <span class="u-date">{{ u.createdAt | date:'mediumDate' }}</span>
-        <div class="actions-cell">
-          <button class="icon-btn" (click)="assignTest(u)" matTooltip="Assign Test">
-            <mat-icon>assignment_add</mat-icon>
-          </button>
-          <button
-            class="icon-btn danger"
-            (click)="removeAssignedTests(u)"
-            matTooltip="Remove Assigned Tests">
-            <mat-icon>delete</mat-icon>
-          </button>
-        </div>
+        <span class="row-arrow"><mat-icon>chevron_right</mat-icon></span>
       </div>
       <div class="empty-state" *ngIf="filteredUsers.length === 0">
         <mat-icon>group</mat-icon>
@@ -69,19 +63,19 @@ import { AssignTestDialogComponent } from './assign-test-dialog.component';
     .search-bar mat-icon { color: var(--color-text-muted); }
     .search-bar input { flex: 1; background: none; border: none; outline: none; color: var(--color-text); font-size: 14px; font-family: var(--font-main); }
     .users-table { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); overflow: hidden; }
-    .table-header { display: grid; grid-template-columns: 2fr 2fr 1fr 1fr 1fr; gap: 16px; padding: 14px 20px; background: var(--color-surface-2); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--color-text-muted); }
-    .table-row { display: grid; grid-template-columns: 2fr 2fr 1fr 1fr 1fr; gap: 16px; padding: 16px 20px; align-items: center; border-top: 1px solid var(--color-border); transition: background var(--transition); }
+    .table-header { display: grid; grid-template-columns: 2fr 2fr 1fr 1fr 32px; gap: 16px; padding: 14px 20px; background: var(--color-surface-2); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--color-text-muted); }
+    .table-row { display: grid; grid-template-columns: 2fr 2fr 1fr 1fr 32px; gap: 16px; padding: 16px 20px; align-items: center; border-top: 1px solid var(--color-border); transition: background var(--transition); }
     .table-row:hover { background: var(--color-surface-2); }
+    .clickable-row { cursor: pointer; }
+    .clickable-row:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
     .user-cell { display: flex; align-items: center; gap: 10px; }
     .avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--color-primary-dim); color: var(--color-primary); font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .u-name { font-weight: 600; font-size: 14px; }
     .u-email { font-size: 13px; color: var(--color-text-muted); }
     .u-date { font-size: 12px; color: var(--color-text-muted); font-family: var(--font-mono); }
-    .actions-cell { display: flex; gap: 4px; }
-    .icon-btn { background: none; border: none; cursor: pointer; color: var(--color-text-muted); padding: 6px; border-radius: var(--radius-sm); display: flex; align-items: center; transition: all var(--transition); }
-    .icon-btn:hover { background: var(--color-primary-dim); color: var(--color-primary); }
-    .icon-btn.danger:hover { background: rgba(247,95,79,0.12); color: var(--color-danger); }
-    .icon-btn mat-icon { font-size: 18px !important; width: 18px; height: 18px; }
+    .row-arrow { display: flex; align-items: center; justify-content: flex-end; color: var(--color-text-dim); }
+    .row-arrow mat-icon { width: 18px; height: 18px; font-size: 18px; }
+    .table-row:hover .row-arrow { color: var(--color-primary); }
   `]
 })
 export class UsersComponent implements OnInit {
@@ -111,49 +105,15 @@ export class UsersComponent implements OnInit {
       error: () => this.loading = false
     });
   }
-  assignTest(user: User): void {
-    this.adminService.getAllTests().subscribe(tests => {
-      const ref = this.dialog.open(AssignTestDialogComponent, { width: '560px', data: { user, tests, mode: 'assign' } });
-      ref.afterClosed().subscribe(result => {
-        if (result) {
-          this.snackBar.open('Test assigned!', 'OK');
-        }
-      });
+  openUserDetails(user: User): void {
+    const ref = this.dialog.open(AssignTestDialogComponent, {
+      width: '700px',
+      maxWidth: '95vw',
+      data: { user, tests: [], mode: 'assign', userAssignments: [] }
     });
-  }
-
-  removeAssignedTests(user: User): void {
-    const userId = user.id;
-    if (!userId) {
-      this.snackBar.open('User id missing. Cannot remove assignments.', 'Close');
-      return;
-    }
-
-    const userName = this.getUserDisplayName(user);
-    if (!confirm(`Remove all assigned tests for ${userName}?`)) return;
-
-    this.adminService.getAllAssignments().pipe(
-      switchMap(assignments => {
-        const userAssignments = assignments.filter(a => a.userId === userId);
-        if (userAssignments.length === 0) {
-          this.removeUserFromList(userId);
-          this.snackBar.open('No assigned tests found. User removed from this list.', 'OK');
-          return of(null);
-        }
-
-        return forkJoin(userAssignments.map(a => this.adminService.deleteAssignment(a.testId || a.id))).pipe(
-          switchMap(() => of(userAssignments.length))
-        );
-      })
-    ).subscribe({
-      next: (removedCount) => {
-        if (typeof removedCount === 'number') {
-          this.snackBar.open(`Removed ${removedCount} assigned test(s).`, 'OK');
-          this.removeUserFromList(userId);
-        }
-      },
-      error: (err) => {
-        this.snackBar.open(err.error?.message || 'Failed to remove assigned tests', 'Close');
+    ref.afterClosed().subscribe(result => {
+      if (result) {
+        this.snackBar.open('User assignments updated', 'OK');
       }
     });
   }
@@ -174,9 +134,5 @@ export class UsersComponent implements OnInit {
 
   getUserInitial(user: User): string {
     return this.getUserDisplayName(user).charAt(0).toUpperCase();
-  }
-
-  private removeUserFromList(userId: string): void {
-    this.users = this.users.filter(u => u.id !== userId);
   }
 }

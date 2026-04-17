@@ -2,14 +2,14 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { BehaviorSubject, Observable, map, tap } from 'rxjs';
-import { ApiResponse, AuthResponse, DecodedToken, LoginRequest, RegisterRequest } from '../../shared/models/models';
-import { API_ENDPOINTS } from '../config/api-endpoints';
+import { environment } from '../../../environments/environment';
+import { AuthResponse, DecodedToken, LoginRequest, RegisterRequest } from '../../shared/models/models';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly TOKEN_KEY = 'exam_token';
   private readonly USER_KEY = 'exam_user';
-  private readonly authApiUrl = API_ENDPOINTS.auth;
+  private apiUrl = `${environment.apiUrl}/auth`;
 
   private currentUserSubject = new BehaviorSubject<AuthResponse | null>(this.getUserFromStorage());
   public currentUser$ = this.currentUserSubject.asObservable();
@@ -17,25 +17,27 @@ export class AuthService {
   constructor(private http: HttpClient, private router: Router) {}
 
   login(request: LoginRequest): Observable<AuthResponse> {
-    return this.http.post<ApiResponse<unknown> | unknown>(`${this.authApiUrl}/login`, request).pipe(
+    return this.http.post<any>(`${this.apiUrl}/login`, request).pipe(
+      map(r => this.unwrapAuthPayload(r)),
       map(r => this.normalizeAuthResponse(r)),
       tap(response => this.storeAuth(response))
     );
   }
 
   register(request: RegisterRequest): Observable<AuthResponse> {
-    return this.http.post<ApiResponse<unknown> | unknown>(`${this.authApiUrl}/register`, request).pipe(
+    return this.http.post<any>(`${this.apiUrl}/register`, request).pipe(
+      map(r => this.unwrapAuthPayload(r)),
       map(r => this.normalizeAuthResponse(r)),
       tap(response => this.storeAuth(response))
     );
   }
 
   forgotPassword(email: string): Observable<{ message: string }> {
-    return this.http.post<{ message: string }>(`${this.authApiUrl}/forgot-password`, { email });
+    return this.http.post<{ message: string }>(`${this.apiUrl}/forgot-password`, { email });
   }
 
   resetPassword(token: string, newPassword: string): Observable<{ message: string }> {
-    return this.http.post<{ message: string }>(`${this.authApiUrl}/reset-password`, { token, newPassword });
+    return this.http.post<{ message: string }>(`${this.apiUrl}/reset-password`, { token, newPassword });
   }
 
   logout(): void {
@@ -93,7 +95,7 @@ export class AuthService {
       return {
         sub: this.extractStringClaim(decoded, ['sub', 'nameid']) ?? '',
         username: this.extractStringClaim(decoded, ['username', 'unique_name', 'email']) ?? undefined,
-        email: this.extractStringClaim(decoded, ['email']) ?? undefined,
+        email: this.extractStringClaim(decoded, ['email'])?? undefined,
         name: this.extractStringClaim(decoded, ['name', 'given_name']) ?? '',
         role,
         exp,
@@ -104,19 +106,18 @@ export class AuthService {
     }
   }
 
-  private normalizeAuthResponse(rawResponse: ApiResponse<unknown> | unknown): AuthResponse {
-    const payload = this.unwrapAuthPayload(rawResponse);
-    const token = this.extractToken(payload);
+  private normalizeAuthResponse(r: Partial<AuthResponse> & { email?: string; token?: string }): AuthResponse {
+    const token = r.token ?? '';
     const decodedToken = token ? this.decodeToken(token) : null;
-    const normalizedRole = this.normalizeRole(this.readString(payload, ['role']) ?? decodedToken?.role);
+    const normalizedRole = this.normalizeRole(r.role ?? decodedToken?.role);
 
     return {
       token,
-      userId: this.readString(payload, ['userId', 'id']) ?? '',
-      fullName: this.readString(payload, ['fullName', 'name']) ?? decodedToken?.name ?? '',
-      username: this.readString(payload, ['username', 'email']) ?? decodedToken?.username ?? decodedToken?.email ?? '',
+      userId: r.userId ?? '',
+      fullName: r.fullName ?? decodedToken?.name ?? '',
+      username: r.username ?? r.email ?? decodedToken?.username ?? decodedToken?.email ?? '',
       role: normalizedRole,
-      expiresAt: this.readString(payload, ['expiresAt', 'expiration', 'expires']) ?? ''
+      expiresAt: r.expiresAt ?? ''
     };
   }
 
@@ -124,43 +125,58 @@ export class AuthService {
     localStorage.setItem(this.TOKEN_KEY, response.token);
     localStorage.setItem(this.USER_KEY, JSON.stringify(response));
     this.currentUserSubject.next(response);
-    console.log('[AuthService.storeAuth]', {
-      role: response.role,
-      expiresAt: response.expiresAt,
-      hasToken: !!response.token,
-      tokenPreview: response.token?.slice(0, 20)
-    });
   }
 
   private getUserFromStorage(): AuthResponse | null {
     const user = localStorage.getItem(this.USER_KEY);
     if (!user) return null;
-    const parsed = JSON.parse(user) as AuthResponse & { email?: string };
-    return this.normalizeAuthResponse(parsed);
-  }
-
-  private unwrapAuthPayload(rawResponse: ApiResponse<unknown> | unknown): Record<string, unknown> {
-    if (!rawResponse || typeof rawResponse !== 'object') return {};
-
-    const responseRecord = rawResponse as Record<string, unknown>;
-    const data = responseRecord['data'];
-
-    if (data && typeof data === 'object') return data as Record<string, unknown>;
-
-    return responseRecord;
-  }
-
-  private extractToken(payload: Record<string, unknown>): string {
-    return this.readString(payload, ['token', 'accessToken', 'jwt', 'jwtToken']) ?? '';
+    try {
+      const parsed = JSON.parse(user) as AuthResponse & { email?: string };
+      return this.normalizeAuthResponse(parsed);
+    } catch {
+      return null;
+    }
   }
 
   private normalizeRole(role: string | null | undefined): string {
     const normalizedRole = (role || '').trim().toLowerCase();
 
-    if (normalizedRole === 'role_admin' || normalizedRole === 'administrator') return 'admin';
-    if (normalizedRole === 'role_user' || normalizedRole === 'student') return 'user';
+    if (['role_admin', 'administrator', 'admin'].includes(normalizedRole)) return 'admin';
+    if ([
+      'role_user',
+      'role_candidate',
+      'student',
+      'candidate',
+      'user',
+      'examuser',
+      'exam_user'
+    ].includes(normalizedRole)) return 'user';
 
     return normalizedRole;
+  }
+
+  private unwrapAuthPayload(response: any): Partial<AuthResponse> & { email?: string; token?: string } {
+    if (!response || typeof response !== 'object') return {};
+    const payload = response.data ?? response.Data ?? response;
+    if (!payload || typeof payload !== 'object') return {};
+    const src = payload as Record<string, any>;
+    return {
+      token: this.readStr(src, ['token', 'Token']) ?? '',
+      userId: this.readStr(src, ['userId', 'UserId', 'id', 'Id']) ?? '',
+      fullName: this.readStr(src, ['fullName', 'FullName', 'name', 'Name']) ?? '',
+      username: this.readStr(src, ['username', 'Username']) ?? '',
+      email: this.readStr(src, ['email', 'Email']) ?? '',
+      role: this.readStr(src, ['role', 'Role']) ?? '',
+      expiresAt: this.readStr(src, ['expiresAt', 'ExpiresAt']) ?? ''
+    };
+  }
+
+  private readStr(source: Record<string, any>, keys: string[]): string | null {
+    for (const key of keys) {
+      const value = source[key];
+      if (typeof value === 'string' && value.trim()) return value;
+    }
+    return null;
   }
 
   private getTokenExpiry(token: string): number | null {
@@ -215,15 +231,6 @@ export class AuthService {
         const parsedValue = Number(value);
         if (Number.isFinite(parsedValue)) return parsedValue;
       }
-    }
-
-    return null;
-  }
-
-  private readString(source: Record<string, unknown>, keys: string[]): string | null {
-    for (const key of keys) {
-      const value = source[key];
-      if (typeof value === 'string' && value.trim()) return value;
     }
 
     return null;

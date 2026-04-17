@@ -5,6 +5,7 @@ import { RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { forkJoin } from 'rxjs';
 import { AdminService } from '../../../core/services/admin.service';
 import { TestSession } from '../../../shared/models/models';
 
@@ -42,8 +43,8 @@ import { TestSession } from '../../../shared/models/models';
       </div>
       <div class="t-row" *ngFor="let s of filteredSessions">
         <div class="u-cell">
-          <div class="avatar">{{ s.userName.charAt(0) }}</div>
-          <span>{{ s.userName }}</span>
+          <div class="avatar">{{ displayUserName(s).charAt(0) }}</div>
+          <span>{{ displayUserName(s) }}</span>
         </div>
         <span class="test-name">{{ s.testTitle }}</span>
         <span class="ts-time">{{ s.startTime | date:'short' }}</span>
@@ -112,7 +113,56 @@ export class SessionsComponent implements OnInit {
   }
 
   constructor(private adminService: AdminService, private snackBar: MatSnackBar) {}
-  ngOnInit(): void { this.adminService.getAllSessions().subscribe({ next: s => { this.sessions = s; this.loading = false; }, error: () => this.loading = false }); }
+  ngOnInit(): void {
+    this.loading = true;
+    forkJoin({
+      sessions: this.adminService.getAllSessions(),
+      users: this.adminService.getAllUsers(),
+      // assignments: this.adminService.getAllAssignments()
+    }).subscribe({
+      next: ({ sessions, users }) => {
+        const usersById = new Map(users.map(u => [u.id, u]));
+        const assignmentNameByComposite = new Map<string, string>();
+        const assignmentNameByUserId = new Map<string, string>();
+        // for (const assignment of assignments) {
+        //   const aName = (assignment.userName || '').trim();
+        //   if (!aName) continue;
+        //   if (assignment.userId) assignmentNameByUserId.set(assignment.userId, aName);
+        //   const composite = `${assignment.userId}::${assignment.testId}`;
+        //   assignmentNameByComposite.set(composite, aName);
+        // }
+
+        this.sessions = sessions.map(session => {
+          const fromSession = (session.userName || '').trim();
+          const fromUsers = (session.userId ? usersById.get(session.userId)?.fullName : '') || '';
+          const fromAssignmentComposite = assignmentNameByComposite.get(`${session.userId}::${session.testId}`) || '';
+          const fromAssignmentUser = session.userId ? (assignmentNameByUserId.get(session.userId) || '') : '';
+
+          const resolvedName = [fromSession, fromUsers, fromAssignmentComposite, fromAssignmentUser]
+            .map(name => name.trim())
+            .find(name => !!name && name.toLowerCase() !== 'unknown user' && name.toLowerCase() !== 'user');
+
+          if (resolvedName) return { ...session, userName: resolvedName };
+          return session;
+        });
+        this.loading = false;
+      },
+      error: () => {
+        // Fallback to sessions-only so this page still works even if users endpoint fails.
+        this.adminService.getAllSessions().subscribe({
+          next: s => { this.sessions = s; this.loading = false; },
+          error: () => this.loading = false
+        });
+      }
+    });
+  }
+
+  displayUserName(session: TestSession): string {
+    const raw = (session.userName || '').trim();
+    if (raw && raw.toLowerCase() !== 'unknown user' && raw.toLowerCase() !== 'unknown') return raw;
+    if (session.userId) return `User ${session.userId.slice(0, 8)}`;
+    return 'User';
+  }
 
   suspendSession(s: TestSession): void {
     const reason = prompt('Reason for suspension:');

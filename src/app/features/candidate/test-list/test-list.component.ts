@@ -31,9 +31,6 @@ import { TestAssignment } from '../../../shared/models/models';
     <div class="assignments-list" *ngIf="!loading">
       <div class="assignment-card" *ngFor="let a of filteredAssignments">
         <div class="ac-left">
-          <div class="ac-icon" [ngClass]="a.status">
-            <mat-icon>{{ iconFor(a.status) }}</mat-icon>
-          </div>
           <div class="ac-info">
             <h3>{{ a.testTitle }}</h3>
             <div class="ac-meta">
@@ -50,10 +47,10 @@ import { TestAssignment } from '../../../shared/models/models';
           <button class="start-btn"
             *ngIf="a.status === 'NotStarted'"
             (click)="startTest(a)"
-            [disabled]="startingId === a.id">
-            <mat-spinner *ngIf="startingId === a.id" diameter="16" strokeWidth="2"></mat-spinner>
-            <mat-icon *ngIf="startingId !== a.id">play_arrow</mat-icon>
-            {{ startingId === a.id ? 'Starting...' : 'Start Test' }}
+            [disabled]="isStarting(a)">
+            <mat-spinner *ngIf="isStarting(a)" diameter="16" strokeWidth="2"></mat-spinner>
+            <mat-icon *ngIf="!isStarting(a)">play_arrow</mat-icon>
+            {{ isStarting(a) ? 'Starting...' : 'Start Test' }}
           </button>
           <button class="resume-btn"
             *ngIf="a.status === 'InProgress'"
@@ -92,15 +89,6 @@ import { TestAssignment } from '../../../shared/models/models';
     .assignment-card:hover { border-color: rgba(79,142,247,0.4); box-shadow: 0 2px 16px rgba(0,0,0,0.2); }
 
     .ac-left { display: flex; align-items: center; gap: 16px; }
-    .ac-icon {
-      width: 48px; height: 48px; border-radius: var(--radius-sm);
-      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-    }
-    .ac-icon mat-icon { font-size: 22px !important; width: 22px; height: 22px; }
-    .ac-icon.notstarted { background: rgba(107,116,148,0.15); color: var(--color-text-muted); }
-    .ac-icon.inprogress { background: rgba(247,193,79,0.15); color: var(--color-warning); }
-    .ac-icon.completed { background: rgba(61,214,140,0.15); color: var(--color-success); }
-    .ac-icon.suspended { background: rgba(247,95,79,0.15); color: var(--color-danger); }
 
     .ac-info h3 { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
     .ac-meta { display: flex; align-items: center; gap: 16px; font-size: 13px; color: var(--color-text-muted); }
@@ -129,7 +117,7 @@ import { TestAssignment } from '../../../shared/models/models';
 export class TestListComponent implements OnInit {
   assignments: TestAssignment[] = [];
   loading = true;
-  startingId = '';
+  startingId: string | null = null;
   selectedStatus = 'All';
   statusFilters = ['All', 'NotStarted', 'InProgress', 'Completed', 'Suspended'];
 
@@ -147,23 +135,47 @@ export class TestListComponent implements OnInit {
 
   ngOnInit(): void {
     this.candidateService.getMyAssignments().subscribe({
-      next: a => { this.assignments = Array.isArray(a) ? a : []; this.loading = false; },
-      error: () => this.loading = false
+     next: (assignments: TestAssignment[]) => {
+  this.assignments = assignments;
+  this.loading = false;
+},  
+     error: (err) => {
+  this.loading = false;
+  this.snackBar.open('Failed to load tests. Please try again.', 'Close');
+  console.error('Failed to load assignments:', err);
+}
     });
   }
 
-  startTest(assignment: TestAssignment): void {
-    this.startingId = assignment.id;
-    this.candidateService.startSession({ testId: assignment.testId || assignment.id }).subscribe({
-      next: (session) => {
-        this.startingId = '';
-        this.router.navigate(['/exam/session'], { state: { session } });
-      },
-      error: (err) => {
-        this.startingId = '';
-        this.snackBar.open(err.error?.message || 'Failed to start session', 'Close');
-      }
-    });
+ startTest(assignment: TestAssignment): void {
+  const testId = assignment.testId || assignment.id;
+  if (!testId) {
+    this.snackBar.open('This test assignment is invalid. Please refresh and try again.', 'Close');
+    return;
+  }
+
+  this.startingId = String(testId);
+
+  this.candidateService.startSession(
+    testId,
+    {
+      testId: testId
+    }
+  ).subscribe({
+    next: (session) => {
+      this.startingId = null;
+      this.router.navigate(['/exam/session'], { state: { session } });
+    },
+    error: (err) => {
+      this.startingId = null;
+      this.snackBar.open(err.error?.message || 'Failed to start session', 'Close');
+    }
+  });
+}
+
+  isStarting(assignment: TestAssignment): boolean {
+    const assignmentKey = assignment?.testId || assignment?.id;
+    return !!assignmentKey && this.startingId === String(assignmentKey);
   }
 
   iconFor(status: string): string {

@@ -24,6 +24,24 @@
   --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+:root[data-theme='light'] {
+  --color-bg: #f3f6fc;
+  --color-surface: #ffffff;
+  --color-surface-2: #f6f8ff;
+  --color-border: #d8e0f2;
+  --color-primary: #2f6fdf;
+  --color-primary-dim: rgba(47, 111, 223, 0.12);
+  --color-accent: #e85d4a;
+  --color-success: #1f9d66;
+  --color-warning: #c28a1e;
+  --color-danger: #d9473a;
+  --color-text: #1a2338;
+  --color-text-muted: #5b6785;
+  --color-text-dim: #8a95b2;
+  --shadow: 0 6px 24px rgba(20, 34, 68, 0.12);
+  --shadow-glow: 0 0 26px rgba(47, 111, 223, 0.14);
+}
+
 // ─── Reset & Base ────────────────────────────────────────────────────
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
